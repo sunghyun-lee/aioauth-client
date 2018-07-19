@@ -104,6 +104,10 @@ class ClientRegistry(type):
         return cls
 
 
+class AioAuthClientError(BaseException):
+    pass
+
+
 class Client(object, metaclass=ClientRegistry):
     """Base abstract OAuth Client class."""
 
@@ -144,10 +148,10 @@ class Client(object, metaclass=ClientRegistry):
             async with async_timeout.timeout(timeout):
                 async with aiohttp.ClientSession(loop=loop) as session:
                     async with session.request(method, url, **kwargs) as response:
-
-                        if response.status / 100 > 2:
-                            raise web.HTTPBadRequest(
-                                reason='HTTP status code: %s' % response.status)
+                        try:
+                            response.raise_for_status()
+                        except aiohttp.ClientResponseError as e:
+                            raise AioAuthClientError(e)
 
                         if 'json' in response.headers.get('CONTENT-TYPE'):
                             data = await response.json()
@@ -331,17 +335,16 @@ class OAuth2Client(Client):
         if redirect_uri:
             payload['redirect_uri'] = redirect_uri
 
-        data = await self.request('POST', self.access_token_url, data=payload, loop=loop)
-
         try:
-            self.access_token = data['access_token']
+            data = await self.request('POST', self.access_token_url, data=payload, loop=loop)
 
-        except KeyError:
+            self.access_token = data['access_token']
+        except AioAuthClientError as e:
             self.logger.error(
                 'Error when getting the access token.\nData returned by OAuth server: %r',
-                data,
+                e,
             )
-            raise web.HTTPBadRequest(reason='Failed to obtain OAuth access token.')
+            raise
 
         return self.access_token, data
 

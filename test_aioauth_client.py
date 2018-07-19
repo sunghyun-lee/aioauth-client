@@ -1,3 +1,5 @@
+import aioresponses
+
 from aioauth_client import * # noqa
 import pytest
 import asyncio
@@ -11,7 +13,7 @@ def loop():
 def test_userinfo_container():
     user = User(email='email')
     assert user.email == 'email'
-    assert user.id == None
+    assert user.id is None
 
 
 def test_oauth1(loop):  # noqa
@@ -24,9 +26,10 @@ def test_oauth1(loop):  # noqa
     assert 'twitter' in ClientRegistry.clients
 
     coro = twitter.get_request_token(oauth_callback='http://fuf.me:5000/twitter')
+
     rtoken, rsecret, _ = loop.run_until_complete(coro)
-    assert rtoken
-    assert rsecret
+    assert rtoken == 'sample_oauth_token'
+    assert rsecret == 'sample_oauth_token_secret'
     assert twitter.oauth_token == rtoken
     assert twitter.oauth_token_secret == rsecret
 
@@ -34,7 +37,7 @@ def test_oauth1(loop):  # noqa
     assert url == 'https://api.twitter.com/oauth/authorize?oauth_token=%s' % rtoken
 
     coro = twitter.get_access_token('wrong', rtoken)
-    with pytest.raises(web.HTTPBadRequest):
+    with pytest.raises(AioAuthClientError) as e:
         loop.run_until_complete(coro)
 
 
@@ -51,5 +54,7 @@ def test_oauth2(loop):  # noqa
 
     coro = github.get_access_token('000')
 
-    with pytest.raises(web.HTTPBadRequest):
+    with pytest.raises(AioAuthClientError) as e:
         loop.run_until_complete(coro)
+
+

@@ -2,3 +2,4 @@
 -e .
 
 pytest==3.2.1
+aioresponses==0.4.2
