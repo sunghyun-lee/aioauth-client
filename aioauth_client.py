@@ -24,6 +24,18 @@ __license__ = "MIT"
 RANDOM = SystemRandom().random
 
 
+class AioAuthException(Exception):
+    def __init__(self, message):
+        self.message = message
+
+
+class AioAuthResponseError(AioAuthException):
+    def __init__(self, status_code, result, message="Request returned failure status code."):
+        super(AioAuthResponseError, self).__init__(message)
+        self.status_code = status_code
+        self.result = result
+
+
 class User:
     """Store user's information."""
 
@@ -144,10 +156,10 @@ class Client(object, metaclass=ClientRegistry):
             async with async_timeout.timeout(timeout):
                 async with aiohttp.ClientSession(loop=loop) as session:
                     async with session.request(method, url, **kwargs) as response:
-
-                        if response.status / 100 > 2:
-                            raise web.HTTPBadRequest(
-                                reason='HTTP status code: %s' % response.status)
+                        try:
+                            response.raise_for_status()
+                        except aiohttp.ClientResponseError as e:
+                            raise AioAuthResponseError(status_code=e.status, result=await response.text())
 
                         if 'json' in response.headers.get('CONTENT-TYPE'):
                             data = await response.json()
@@ -157,7 +169,7 @@ class Client(object, metaclass=ClientRegistry):
 
                         return data
         except asyncio.TimeoutError:
-            raise web.HTTPBadRequest(reason='HTTP timeout')
+            raise AioAuthResponseError(status_code=408, result="Request timeout")
 
     def request(self, method, url, params=None, headers=None, loop=None,
                 **aio_kwargs):
@@ -259,9 +271,7 @@ class OAuth1Client(Client):
             oauth_verifier = oauth_verifier[self.shared_key]
 
         if request_token and self.oauth_token != request_token:
-            raise web.HTTPBadRequest(
-                reason='Failed to obtain OAuth 1.0 access token. '
-                       'Request token is invalid')
+            raise AioAuthException(message='Failed to obtain OAuth 1.0 access token. Request token is invalid')
 
         data = await self.request('POST', self.access_token_url, params={
             'oauth_verifier': oauth_verifier, 'oauth_token': request_token}, loop=loop)
@@ -341,7 +351,7 @@ class OAuth2Client(Client):
                 'Error when getting the access token.\nData returned by OAuth server: %r',
                 data,
             )
-            raise web.HTTPBadRequest(reason='Failed to obtain OAuth access token.')
+            raise AioAuthException(message='Failed to obtain OAuth access token.')
 
         return self.access_token, data
 
